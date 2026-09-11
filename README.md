@@ -2,13 +2,59 @@
 
 An interactive installer for a new **Pterodactyl Panel 1.x and local Wings** deployment on Debian or Ubuntu. It uses official Panel, Wings, Composer, Docker, and Certbot downloads.
 
+## Project layout
+
+```
+.
+├── install.sh          # Global entry point: installs Python deps, then runs install.py
+├── uninstall.sh        # Global entry point: installs Python deps, then runs uninstall.py
+├── install.py          # Thin entry wrapper (implementation lives in src/)
+├── uninstall.py        # Thin entry wrapper (implementation lives in src/)
+├── src/
+│   ├── installer.py    # Install orchestration / main
+│   ├── uninstaller.py  # Uninstall orchestration / main
+│   ├── config.py       # Central paths (state, logs, host paths)
+│   ├── log.py          # Timestamped log-file setup
+│   ├── ui.py           # Prompts / messages (mirrored to the log)
+│   ├── utils.py        # run/capture/installed/root checks/remove_path
+│   ├── state.py        # Resume state (save/load/clear)
+│   ├── manifest.py     # Uninstall manifest
+│   ├── packages.py     # apt helpers + tracked installed packages
+│   ├── php.py          # PHP version selection/socket detection
+│   ├── database.py     # MariaDB database/user creation
+│   ├── panel.py        # Panel download, .env, scheduler, pteroq
+│   ├── webserver.py    # Nginx/Apache config + ACME webroot site
+│   ├── certbot.py      # Let's Encrypt certificates
+│   ├── wings.py        # Docker + Wings binary/service
+│   ├── apiclient.py    # Pterodactyl Application API + YAML emitter
+│   ├── node.py         # Node provisioning through the Panel API
+│   ├── firewall.py     # Optional UFW rules
+│   ├── summary.py      # Completion summary
+│   └── art.py          # ASCII banners
+├── state/              # Temporary resume state + uninstall manifest (git-ignored)
+└── logs/               # Every install/uninstall runs append a timestamped log
+```
+
 ## Run it
 
 Use a fresh supported server with DNS records already pointing to it. Log in over SSH, then:
 
 ```bash
 cd /path/to/indogeek-pterodactyl-installer
+sudo ./install.sh
+```
+
+The wrapper scripts are runnable from any directory, re-exec themselves through `sudo`, and install Python 3 (the only runtime dependency; the Python code itself uses only the standard library) via `apt-get` when it is missing or older than 3.8. After the install, run removal with:
+
+```bash
+sudo ./uninstall.sh
+```
+
+Each run appends a timestamped log under `logs/` (e.g. `install-20260911-221422.log`, `uninstall-...log`). You can also invoke the Python scripts directly:
+
+```bash
 sudo python3 install.py
+sudo python3 uninstall.py
 ```
 
 The installer displays every command it runs and asks before every optional or material change. Do not run it on a host with an existing Panel directory. It intentionally refuses hosts that have both Apache and Nginx installed, because selecting one would risk disrupting existing sites.
@@ -35,11 +81,11 @@ After completion, back up `APP_KEY` somewhere outside the server:
 sudo grep APP_KEY /var/www/pterodactyl/.env
 ```
 
-The completed installation also installs a selective cleanup tool at `/usr/local/sbin/pterodactyl-uninstall.py`. Run it as root when needed; it asks separately before removing Panel files, Wings, services, web configuration, certificates, database data, the recorded PHP version, dependencies, Composer, and Docker resources. It never removes other PHP versions.
+The completed installation records uninstall metadata (domains, web server, PHP version, package list, database names, generated files — never credentials) in `state/manifest.json`, which `uninstall.sh` reads. `uninstall.py` asks separately before removing Panel files, Wings, services, web configuration, certificates, database data, the recorded PHP version, dependencies, Composer, and Docker resources. It never removes other PHP versions.
 
-## Recovery
+## Recovery and state
 
-The installer saves its progress and supplied configuration in `/var/lib/pterodactyl-installer/state.json` with root-only permissions. If it exits or is interrupted, run the same command again and it resumes after the last completed phase; it does not ask for the saved credentials again. The state file is automatically removed after a successful installation.
+The installer saves its progress and supplied configuration in `state/state.json` (inside this project, git-ignored, root-only permissions). If it exits or is interrupted, run `sudo ./install.sh` again and it resumes after the last completed phase; it does not ask for the saved credentials again. On a successful finish the temporary state file is removed automatically — the `state/` directory itself is kept for the manifest and future runs.
 
 The installer does not roll back completed operations. Inspect service status with:
 

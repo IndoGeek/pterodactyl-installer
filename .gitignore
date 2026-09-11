@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.swp
+
+# Runtime state (state.json holds credentials) - only the placeholder is kept.
+state/*
+!state/.gitkeep
+
+# Installation / uninstallation logs.
+logs/*
+!logs/.gitkeep

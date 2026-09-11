@@ -1,0 +1,2 @@
+Volume for timestamped installation and uninstallation logs, written by the
+scripts inside src/. The .gitkeep placeholder is the only tracked file.

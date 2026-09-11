@@ -1,0 +1,3 @@
+This directory holds the installer's temporary resume state (state.json) and
+the uninstall manifest (manifest.json). Both are git-ignored and root-owned at
+runtime; do not commit their contents.

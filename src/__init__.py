@@ -1,0 +1,1 @@
+"""IndoGeek Pterodactyl installer package."""
