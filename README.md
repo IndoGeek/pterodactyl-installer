@@ -15,7 +15,7 @@ The installer displays every command it runs and asks before every optional or m
 
 ## What it configures
 
-- PHP 8.3, MariaDB, Redis, Composer, the current Panel release, a cron scheduler, and `pteroq` queue worker.
+- A supported installed PHP runtime (preferring 8.3, then 8.2), MariaDB, Redis, Composer, the current Panel release, Pterodactyl's every-minute scheduler, and the `pteroq` queue worker. If neither supported PHP version is installed, it installs PHP 8.3 and only the required versioned packages.
 - An Nginx or Apache virtual host for the Panel FQDN. Existing single-server installations are reused; otherwise you choose the server.
 - Existing Let's Encrypt certificates are reused. Missing certificates can be requested through Certbot after DNS validation.
 - Docker, the current Wings binary, its systemd service, and optional Docker swap accounting (a reboot is required after GRUB changes).
@@ -35,9 +35,13 @@ After completion, back up `APP_KEY` somewhere outside the server:
 sudo grep APP_KEY /var/www/pterodactyl/.env
 ```
 
+The completed installation also installs a selective cleanup tool at `/usr/local/sbin/pterodactyl-uninstall.py`. Run it as root when needed; it asks separately before removing Panel files, Wings, services, web configuration, certificates, database data, the recorded PHP version, dependencies, Composer, and Docker resources. It never removes other PHP versions.
+
 ## Recovery
 
-The installer does not roll back completed operations if it is interrupted. Inspect service status with:
+The installer saves its progress and supplied configuration in `/var/lib/pterodactyl-installer/state.json` with root-only permissions. If it exits or is interrupted, run the same command again and it resumes after the last completed phase; it does not ask for the saved credentials again. The state file is automatically removed after a successful installation.
+
+The installer does not roll back completed operations. Inspect service status with:
 
 ```bash
 sudo systemctl status pteroq nginx apache2 wings docker
