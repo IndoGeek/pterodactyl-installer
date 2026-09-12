@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import secrets
+import sys
 
 from . import config, log
 from .art import ART
@@ -17,8 +18,27 @@ from .state import clear_resume_state, complete_phase, load_state, save_state
 from .summary import completion_summary
 from .ui import ask, confirm, say
 from .utils import root_and_platform
-from .webserver import selected_webserver, webserver_config
+from .webserver import apply_ssl, selected_webserver, webserver_config
 from .wings import docker_and_wings
+
+
+def repair_ssl() -> None:
+    """Re-enable HTTPS for the configured panel domain without re-running the install.
+
+    A resumed installer run rewrites the panel site to plain HTTP and the ssl phase is
+    already checkpointed, so normal resume skips it. This applies the HTTPS server block
+    from the certificates that already exist on disk."""
+    repair_log = log.setup_logging('repair-ssl')
+    print(ART)
+    say('Applying the existing Let\'s Encrypt certificate to the panel site.', 'NOTE')
+    root_and_platform()
+    state = load_state()
+    setup = state['config']
+    written = apply_ssl(setup['web'], setup['panel_domain'], setup.get('php_version', ''))
+    if not written:
+        sys.exit(f'No certificate found at /etc/letsencrypt/live/{setup["panel_domain"]}; cannot enable HTTPS.')
+    say(f'HTTPS enabled for https://{setup["panel_domain"]}. Open it in your browser to continue.', 'OK')
+    say(f'Repair log: {repair_log}', 'OK')
 
 
 def main() -> None:
@@ -76,13 +96,25 @@ def main() -> None:
         create_database(**setup['db'])
         complete_phase(state, 'database')
     if 'panel' not in completed:
+        # Panel setup was not completed (crashed during account creation, or the checkpoint
+        # was edited). Reconfirm the administrator so a stale account can be replaced.
+        say('Resuming with an unfinished Panel phase; please reconfirm the administrator account.', 'NOTE')
+        current = setup['admin']
+        setup['admin'] = {'email': ask('Administrator email', current['email']),
+                          'username': ask('Administrator username', current['username']),
+                          'first': ask('Administrator first name', current['first']),
+                          'last': ask('Administrator last name', current['last']),
+                          'password': ask('Administrator password', secret=True)}
+        if setup['mail']['from_address'] == current['email'] and setup['mail']['from_address'] != setup['admin']['email']:
+            setup['mail']['from_address'] = setup['admin']['email']
+        save_state(state)
         panel_setup(panel_domain, setup['db'], setup['admin'], setup['mail'], setup['php_version'])
         complete_phase(state, 'panel')
     if 'webserver' not in completed:
         webserver_config(setup['web'], panel_domain, setup['php_version'])
         complete_phase(state, 'webserver')
     if 'ssl' not in completed:
-        configure_ssl(setup['web'], panel_domain, wing_domain, setup['admin']['email'])
+        configure_ssl(setup['web'], panel_domain, wing_domain, setup['admin']['email'], setup['php_version'])
         complete_phase(state, 'ssl')
     if 'wings' not in completed:
         docker_and_wings()

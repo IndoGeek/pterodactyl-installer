@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -25,6 +26,36 @@ def write_scheduler(php_version: str) -> None:
     # Pterodactyl's official every-minute schedule:run entry.
     Path('/etc/cron.d/pterodactyl').write_text(
         f'* * * * * www-data /usr/bin/php{php_version} /var/www/pterodactyl/artisan schedule:run >> /dev/null 2>&1\n')
+
+
+def replace_existing_admin(admin: dict, php_bin: str, panel: Path) -> bool:
+    """A prior install may have left an account for this email in the database (e.g. it
+    was torn down manually without dropping the database). Delete that row through the same
+    PHP/PDO connection the Panel uses (its .env) so p:user:make can recreate the
+    administrator with the supplied details. Returns True when a leftover account was
+    removed."""
+    php = (
+        '$env = [];'
+        'foreach (file($argv[1], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {'
+        'if (str_starts_with($line, "#") || !str_contains($line, "=")) continue;'
+        '[$key, $value] = explode("=", $line, 2);'
+        '$env[$key] = trim($value);'
+        '}'
+        '$pdo = new PDO("mysql:host={$env[\"DB_HOST\"]};port={$env[\"DB_PORT\"]};dbname={$env[\"DB_DATABASE\"]}", $env["DB_USERNAME"], $env["DB_PASSWORD"]);'
+        '$stmt = $pdo->prepare("DELETE FROM users WHERE email = ?");'
+        '$stmt->execute([$argv[2]]);'
+        'echo $stmt->rowCount(), PHP_EOL;'
+    )
+    result = subprocess.run([php_bin, '-r', php, str(panel / '.env'), admin['email']],
+                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    output = result.stdout.strip()
+    if result.returncode != 0 or not output:
+        say(f'Could not check for a leftover account in the panel database: {output or "unknown error"}', 'WARN')
+        return False
+    if output == '0':
+        return False
+    say(f'Removed the leftover account for {admin["email"]} left by an earlier install; recreating it.', 'OK')
+    return True
 
 
 def panel_setup(domain: str, db: dict, admin: dict, mail: dict, php_version: str) -> None:
@@ -55,6 +86,7 @@ def panel_setup(domain: str, db: dict, admin: dict, mail: dict, php_version: str
     run(php_bin, '/usr/local/bin/composer', 'install', '--no-dev', '--optimize-autoloader', cwd=config.PANEL, env=env)
     run(php_bin, 'artisan', 'key:generate', '--force', cwd=config.PANEL)
     run(php_bin, 'artisan', 'migrate', '--seed', '--force', cwd=config.PANEL)
+    replace_existing_admin(admin, php_bin, config.PANEL)
     # The command's non-interactive flags avoid recording the password in shell history.
     run(php_bin, 'artisan', 'p:user:make', '--email', admin['email'], '--username', admin['username'],
         '--name-first', admin['first'], '--name-last', admin['last'], '--password', admin['password'],

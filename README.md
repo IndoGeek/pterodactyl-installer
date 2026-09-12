@@ -85,7 +85,7 @@ The completed installation records uninstall metadata (domains, web server, PHP 
 
 ## Recovery and state
 
-The installer saves its progress and supplied configuration in `state/state.json` (inside this project, git-ignored, root-only permissions). If it exits or is interrupted, run `sudo ./install.sh` again and it resumes after the last completed phase; it does not ask for the saved credentials again. On a successful finish the temporary state file is removed automatically — the `state/` directory itself is kept for the manifest and future runs.
+The installer saves its progress and supplied configuration in `state/state.json` (inside this project, git-ignored, root-only permissions). If it exits or is interrupted, run `sudo ./install.sh` again and it resumes after the last completed phase. When the Panel phase was not completed it reconfirms the administrator details; an account already present in the database from a previous install (e.g. a manual teardown that left the database behind) is removed and recreated with the new details. On a successful finish the temporary state file is removed automatically — the `state/` directory itself is kept for the manifest and future runs.
 
 The installer does not roll back completed operations. Inspect service status with:
 
@@ -93,5 +93,18 @@ The installer does not roll back completed operations. Inspect service status wi
 sudo systemctl status pteroq nginx apache2 wings docker
 sudo journalctl -u wings -u pteroq -e
 ```
+
+### Repair HTTPS after a resumed install
+
+Resuming the installer re-runs the web-server phase, which rewrites the Panel site to plain HTTP. If the Let's Encrypt certificate already exists, the SSL phase is skipped and the HTTPS server block is lost, leaving the Panel openable only over HTTP while `APP_URL` still points at `https://...`.
+
+Re-apply the existing certificate to the Panel site without starting a new install:
+
+```bash
+cd /path/to/indogeek-pterodactyl-installer
+sudo ./install.sh repair-ssl
+```
+
+This is safe to run from a second SSH session in another terminal while the original installer is still running and waiting for the Application API key. It rewrites the Nginx/Apache site with an HTTPS server block and reloads the web server, then you can continue with the running install from the other terminal. The command fails loudly if no certificate exists yet, rather than enabling a broken HTTPS site.
 
 For current upstream requirements and troubleshooting, consult the official [Panel documentation](https://pterodactyl.io/panel/1.0/getting_started.html) and [Wings documentation](https://pterodactyl.io/wings/1.0/installing.html).
